@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>WebSocket Chat</title>
+</head>
+<body>
+<div id="clientInterface">
+    <button id="startChat" onclick="startChat()">Начать чат</button>
+    <div id="chatContainer" style="display: none;">
+        <input id="input" type="text" placeholder="Enter your message..." />
+        <button onclick="send()">Send</button>
+        <button onclick="logoutOfChat()">Logout</button>
+        <pre id="output"></pre>
+    </div>
+</div>
+
+<div id="adminInterface" style="display: none;">
+    <button onclick="connectToRoom('room1')">Room1</button>
+    <button onclick="connectToRoom('room2')">Room2</button>
+    <button onclick="connectToRoom('room3')">Room3</button>
+    <div id="adminChatContainer" style="display: none;">
+        <input id="adminInput" type="text" placeholder="Enter your message..." />
+        <button onclick="sendAdminMessage()">Send</button>
+        <pre id="adminOutput"></pre>
+    </div>
+</div>
+
+<script>
+    var input = document.getElementById("input");
+    var output = document.getElementById("output");
+    var startChatButton = document.getElementById("startChat");
+    var chatContainer = document.getElementById("chatContainer");
+    var adminInput = document.getElementById("adminInput");
+    var adminOutput = document.getElementById("adminOutput");
+    var adminChatContainer = document.getElementById("adminChatContainer");
+    var role = prompt("Enter role (admin, user1, user2, user3):");
+    var room = null;
+    var socket = null;
+    var clientID = null;
+
+    function startChat() {
+        if (role === "admin") {
+            alert("Admin cannot start a chat directly.");
+            return;
+        }
+        room = role === "user1" ? "room1" : role === "user2" ? "room2" : "room3";
+        connectToRoom(room);
+    }
+
+    function connectToRoom(selectedRoom) {
+        room = selectedRoom;
+        var socketUrl = "ws://localhost:8080/echo?role=" + role + "&room=" + room;
+        socket = new WebSocket(socketUrl);
+
+        socket.onopen = function () {
+            if (role === "admin") {
+                adminOutput.innerHTML += "Status: Connected to " + room + "\n";
+                adminChatContainer.style.display = "block";
+            } else {
+                output.innerHTML += "Status: Connected to " + room + "\n";
+                startChatButton.style.display = "none";
+                chatContainer.style.display = "block";
+            }
+        };
+
+        socket.onmessage = function (e) {
+            var message = e.data;
+            if (message.startsWith("ID:")) {
+                clientID = message.substring(3);
+                if (role !== "admin") {
+                    output.innerHTML += "Your ID: " + clientID + "\n";
+                }
+            } else {
+                if (role === "admin") {
+                    adminOutput.innerHTML += message + "\n";
+                } else {
+                    output.innerHTML += message + "\n";
+                }
+            }
+        };
+
+        socket.onclose = function (event) {
+            if (role === "admin") {
+                adminOutput.innerHTML += `Status: Disconnected (Clean closure, code=${event.code}, reason=${event.reason})\n`;
+            } else {
+                output.innerHTML += `Status: Disconnected (Clean closure, code=${event.code}, reason=${event.reason})\n`;
+                window.close(); // Close the tab when disconnected
+            }
+        };
+
+        socket.onerror = function (error) {
+            if (role === "admin") {
+                adminOutput.innerHTML += `Error: ${error.message}\n`;
+            } else {
+                output.innerHTML += `Error: ${error.message}\n`;
+            }
+        };
+    }
+
+    function send() {
+        if (!socket) {
+            alert("You are not connected to any room.");
+            return;
+        }
+        var msg = input.value;
+        socket.send(msg);
+        input.value = ""; // Clear the input field after sending the message
+    }
+
+    function sendAdminMessage() {
+        if (!socket) {
+            alert("You are not connected to any room.");
+            return;
+        }
+        var msg = adminInput.value;
+        socket.send(msg);
+        adminInput.value = ""; // Clear the input field after sending the message
+    }
+
+    function logoutOfChat() {
+        if (socket) {
+            socket.close();
+        }
+    }
+
+    if (role === "admin") {
+        document.getElementById("clientInterface").style.display = "none";
+        document.getElementById("adminInterface").style.display = "block";
+    } else {
+        document.getElementById("clientInterface").style.display = "block";
+        document.getElementById("adminInterface").style.display = "none";
+    }
+
+    socket.onclose = function(event) {
+        if (event.wasClean) {
+            output.innerHTML += `Status: Disconnected (Clean closure, code=${event.code}, reason=${event.reason})\n`;
+            output.innerHTML = ""; // Очистить историю чата
+        } else {
+            output.innerHTML += `Status: Disconnected (Unclean closure, code=${event.code})\n`;
+        }
+    };
+
+    function deleteChat() {
+        if (!socket) {
+            alert("You are not connected to any room.");
+            return;
+        }
+        var xhr = new XMLHttpRequest();
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState === XMLHttpRequest.DONE) {
+                if (xhr.status === 200) {
+                    // Успешно удалено
+                } else {
+                    // Обработка ошибок удаления чата
+                    console.error("Error deleting chat:", xhr.responseText);
+                }
+                socket.close(); // Закрыть соединение WebSocket после удаления чата
+            }
+        };
+        xhr.open("GET", "/echo?role=" + role + "&room=" + room + "&deleteChat=true", true);
+        xhr.send();
+    }
+
+</script>
+</body>
+</html>
