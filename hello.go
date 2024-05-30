@@ -33,6 +33,8 @@ var rooms = make(map[string]map[*websocket.Conn]bool)
 var mutex = &sync.Mutex{}
 var db *sql.DB
 
+var roomCounter int
+
 func main() {
 	var err error
 	connStr := "user=postgres password=Aruzhan7 dbname=goo sslmode=disable"
@@ -42,10 +44,20 @@ func main() {
 	}
 	defer db.Close()
 
-	// Добавляем новый столбец disabled к таблице messages, если его еще нет
-	_, err = db.Exec("ALTER TABLE messages ADD COLUMN IF NOT EXISTS disabled BOOLEAN DEFAULT FALSE")
+	// Создаем таблицу messages, если ее еще нет
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS messages (
+			id SERIAL PRIMARY KEY,
+			client_id VARCHAR(36),
+			role VARCHAR(10),
+			room VARCHAR(36),
+			message TEXT,
+			disabled BOOLEAN DEFAULT FALSE,
+			created_at TIMESTAMPTZ DEFAULT NOW()
+		)
+	`)
 	if err != nil {
-		log.Fatal("Error adding disabled column to messages table:", err)
+		log.Fatal("Error creating messages table:", err)
 	}
 
 	http.HandleFunc("/echo", handleConnections)
@@ -209,12 +221,10 @@ func handleCreateRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	room := uuid.New().String()
-
 	mutex.Lock()
-	if _, ok := rooms[room]; !ok {
-		rooms[room] = make(map[*websocket.Conn]bool)
-	}
+	roomCounter++
+	room := fmt.Sprintf("room%d", roomCounter)
+	rooms[room] = make(map[*websocket.Conn]bool)
 	mutex.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
