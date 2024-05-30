@@ -34,18 +34,18 @@ var mutex = &sync.Mutex{}
 var db *sql.DB
 
 func main() {
-	// Установка соединения с базой данных
-	db, err := sql.Open("postgres", "user=postgres password=Aruzhan7 dbname=golang sslmode=disable")
+	var err error
+	connStr := "user=postgres password=Aruzhan7 dbname=goo sslmode=disable"
+	db, err = sql.Open("postgres", connStr)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
 
-	// Проверка соединения с базой данных
-	err = db.Ping()
+	// Добавляем новый столбец disabled к таблице messages, если его еще нет
+	_, err = db.Exec("ALTER TABLE messages ADD COLUMN IF NOT EXISTS disabled BOOLEAN DEFAULT FALSE")
 	if err != nil {
-		log.Fatal("Ошибка соединения с базой данных:", err)
-
+		log.Fatal("Error adding disabled column to messages table:", err)
 	}
 
 	http.HandleFunc("/echo", handleConnections)
