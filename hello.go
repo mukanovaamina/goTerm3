@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -33,21 +34,24 @@ var mutex = &sync.Mutex{}
 var db *sql.DB
 
 func main() {
-	var err error
-	connStr := "user=postgres password=Aruzhan7 dbname=amina sslmode=disable"
-	db, err = sql.Open("postgres", connStr)
+	// Установка соединения с базой данных
+	db, err := sql.Open("postgres", "user=postgres password=Aruzhan7 dbname=golang sslmode=disable")
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
 
-	// Добавляем новый столбец disabled к таблице messages, если его еще нет
-	_, err = db.Exec("ALTER TABLE messages ADD COLUMN IF NOT EXISTS disabled BOOLEAN DEFAULT FALSE")
+	// Проверка соединения с базой данных
+	err = db.Ping()
 	if err != nil {
-		log.Fatal("Error adding disabled column to messages table:", err)
+		log.Fatal("Ошибка соединения с базой данных:", err)
+
 	}
 
 	http.HandleFunc("/echo", handleConnections)
+	http.HandleFunc("/rooms", handleRooms)
+	http.HandleFunc("/createRoom", handleCreateRoom)
+	http.HandleFunc("/deleteRoom", handleDeleteRoom)
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "index.html")
@@ -179,4 +183,56 @@ func disableChat(room string) {
 		return
 	}
 	log.Println("Chat in room", room, "disabled.")
+}
+
+func handleRooms(w http.ResponseWriter, r *http.Request) {
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	var roomList []string
+	for room := range rooms {
+		roomList = append(roomList, room)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(roomList)
+}
+
+func handleCreateRoom(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Role string `json:"role"`
+	}
+
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	room := uuid.New().String()
+
+	mutex.Lock()
+	if _, ok := rooms[room]; !ok {
+		rooms[room] = make(map[*websocket.Conn]bool)
+	}
+	mutex.Unlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"room": room})
+}
+
+func handleDeleteRoom(w http.ResponseWriter, r *http.Request) {
+	room := r.URL.Query().Get("room")
+	if room == "" {
+		http.Error(w, "Room not specified", http.StatusBadRequest)
+		return
+	}
+
+	disableChat(room)
+
+	mutex.Lock()
+	delete(rooms, room)
+	mutex.Unlock()
+
+	w.WriteHeader(http.StatusOK)
 }
